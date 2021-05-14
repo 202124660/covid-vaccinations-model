@@ -16,12 +16,12 @@ from metromin import metromin
 import datetime
 from scipy.stats import gamma
 from covid_data import *
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from timeit import default_timer as timer
      
 #######################################################################
 class PopDyn(metromin) : 
-    def __init__(self,Totpop,I0,Tmax,R,Kf,nP,wave, contact_matrix, priority, usepriority=True):
+    def __init__(self,Totpop,I0,Tmax,R,Kf,nP,wave, contact_matrix, priority, usepriority=True, optimise=True):
         """ Initialisation
             : wave : 1/2 (1st/2nd wave)
             : TotPop : total population size
@@ -52,19 +52,19 @@ class PopDyn(metromin) :
             : Prd : prob dist of recovering after infection
         """
         super().__init__(10)
-#        self.N0 = N0
-#        self.K = 1
-#        self.Ns = 1
-#        self.Y = 0
+
+
+
+
         self.wave=wave
         self.TotPop = Totpop
         self.I0 = I0
         self.Tmax = Tmax
         self.asize=Tmax+1
         
-        # self.d= d
+
         self.Rpar = R
-        self.Kf = Kf
+        self.Kf = np.array(Kf)
         self.nP=nP
         self.nPad = nP+1
         self.delay = 0
@@ -94,6 +94,8 @@ class PopDyn(metromin) :
         self.cmx=contact_matrix
         self.priority = priority
         self.usepriority = usepriority
+
+        self.optimise = optimise
          
     def intialise(self,wave, delay=14):
         if wave==1:
@@ -102,15 +104,15 @@ class PopDyn(metromin) :
                 self.I[i][0]=self.I0
                 self.Di[i][self.nPad-1]=self.I0
         
-        # if wave==2:
-        #     self.delay = delay
-        #     for d in range(1, self.delay):
-        #     # exp_Fat[d] : exp fatalities on day 0-delay+d 
-        #         self.Di[self.nPad-self.delay+d]=(self.exp_Fat[d+1]-self.exp_Fat[d])/self.Kf 
-        #     self.Fat[0]=self.exp_data[0]
-        #     self.R[0] = self.Fat[0]/self.Kf*(1-self.Kf)
-        #     self.I[0] = np.sum(self.Di[self.d-self.delay:self.d])
-        #     self.S[0] = self.TotPop-self.I[0]-self.R[0]-self.Fat[0] 
+
+
+
+
+
+
+
+
+
     
     def mk_gamma(self,t, mu, var_coef):
         """ Create and return a varience distribution
@@ -143,7 +145,7 @@ class PopDyn(metromin) :
         nt = []
         nf = []
         for i in range(len(f)):
-            # print(len(t),len(f),i,f[i],val)
+
             if(f[i] > val):
                 nt.append(t[i])
                 nf.append(f[i])
@@ -180,21 +182,24 @@ class PopDyn(metromin) :
             Logistic Equation : N(d+1) = K*N*(N-Ns)-Y*N**3*(N-Ns)**2
         """
         d = self.d
-        #self.N[d+1] = self.K*self.N[d]*(self.Ns-self.N[d])\
-        #               -self.Y*self.N[d]**0.5*(self.Ns-self.N[d])**2
-        #if(self.N[d+1] < 0): self.N[d+1] = 0
 
-        #self.d += 1
+
+
+
+
 
         if d > vfromday:
             if vperday != 0:
-                # print(vperday,self.S[d],(self.TotPop-self.Fat[d]-self.vaccinated))
+
                 num_sus_vaccinated = np.zeros(18)
                 vleft = vperday + (d-vfromday)*vcapacityincrease
                 if d > vfromday+dosegap:
-                    vleft -= self.vaxcounthistory[d-(vfromday+dosegap)]
-                if vleft > vaxmax:
-                    vleft = vaxmax
+                    vleft -= self.vaxcounthistory[d-(vfromday+dosegap+1)]
+                if vperday + (d-vfromday)*vcapacityincrease > vaxmax:
+                    if d > vfromday+dosegap:
+                        vleft = vaxmax - self.vaxcounthistory[d-(vfromday+dosegap+1)]
+                    else:
+                        vleft = vaxmax
                 if self.usepriority == True:
                     for groupnum, i in enumerate(self.priority):
                         if groupnum == 0:
@@ -213,17 +218,17 @@ class PopDyn(metromin) :
                         self.vaccinated[i] += num_to_vax_in_group + overvax
                         newlyvaxxed += num_to_vax_in_group + overvax
                         self.Ddose1[i][self.nPad+d]=num_sus_vaccinated[i]
-                        # totSvacc = self.totSvacc[i][-1]
-                        # self.totSvacc[i][d-vfromday] = num_sus_vaccinated[i] + totSvacc # check [d-vfromday]
-                        # print("group",i,num_to_vax_in_group,vleft,self.S[i][d])
+
+
+
                 else:
                     vperday = vleft
                     for i in range(18):
                         if i == 0:
                             newlyvaxxed = 0
-                        perc_vax = self.TotPop[i]/sum(self.TotPop)
+                        perc_vax = self.TotPop[i]/(self.TotPop).sum()
                         if vperday*perc_vax > vleft:
-                            # print("running out",vperday*perc_vax,vleft)
+
                             perc_vax = vleft/vperday
                         num_to_vax_in_group = max(min(vperday*perc_vax,self.TotPop[i]-self.Fat[i][d]-self.vaccinated[i]),0)
                         vleft -= num_to_vax_in_group
@@ -239,119 +244,171 @@ class PopDyn(metromin) :
                         self.vaccinated[i] += num_to_vax_in_group + overvax
                         newlyvaxxed += num_to_vax_in_group + overvax
                         self.Ddose1[i][self.nPad+d]=num_sus_vaccinated[i]
-                        # print(i,perc_vax,num_to_vax_in_group,self.TotPop[i]/sum(self.TotPop))
+
                 self.vaxcounthistory.append(newlyvaxxed)
-                # print(self.S[:,d],self.I[:,d],self.R[:,d],self.Fat[:,d],self.vaccinated)
 
-        SumDi = np.zeros(18)
-        SumRFi = np.zeros(18)
-        SumDdose1i = np.zeros(18)
+
+
+
+
         VaxxedSus = np.zeros((18, self.nPad + d + 1))
-        for i in range(18):
-            SumDi[i] = sum(self.Pinf*self.Di[i][self.nPad+d:self.nPad+d-self.nP-1:-1]) # total currently actually infectious (of those in the I group)
-            SumRFi[i] = sum(self.Prd*self.Di[i][self.nPad+d:self.nPad+d-self.nP-1:-1]) # total of I group who just recovered/died
-            # if d == vfromday + 1:
-            #     print(d,i,vperday,SumDi[i],SumRFi[i])
-            if vperday > 0:
-                # print(vprob,finalvprob)
-                # print(np.array([1-(vprob*i/(vdelay-1)) for i in range(vdelay)] + [1-vprob]*(dosegap-vdelay) + [1-vprob-((finalvprob-vprob)*i/(vdelay2-1)) for i in range(vdelay2)] + [1-finalvprob]*(self.nPad-dosegap-vdelay2)))
-                # if i == 5:
-                #     print(d,sum(self.Ddose1[i][self.nPad+d::-1]*np.array([1-(vprob*i/(vdelay-1)) for i in range(vdelay)] + [1-vprob]*(dosegap-vdelay) + [1-vprob-((finalvprob-vprob)*i/(vdelay2-1)) for i in range(vdelay2)] + [1-finalvprob]*(1+d+self.nPad-dosegap-vdelay2))),self.Ddose1[i][self.nPad+d::-1]*np.array([1-(vprob*i/(vdelay-1)) for i in range(vdelay)] + [1-vprob]*(dosegap-vdelay) + [1-vprob-((finalvprob-vprob)*i/(vdelay2-1)) for i in range(vdelay2)] + [1-finalvprob]*(1+d+self.nPad-dosegap-vdelay2)))
-                # VaxxedSus[i] = np.flip(self.Ddose1[i][self.nPad + d::-1] * np.array([1 - (vprob * i / (vdelay - 1)) for i in range(vdelay)] + [1 - vprob] * (dosegap - vdelay) + [1 - vprob - ((finalvprob - vprob) * i / (vdelay2 - 1)) for i in range(vdelay2)] + [1 - finalvprob] * (1 + d + self.nPad - dosegap - vdelay2)))  # vaccinated who are still susceptible
-                # VaxxedSus[i] = np.flip(self.Ddose1[i][self.nPad + d::-1]*self.vaxmultiplier[:self.nPad + d + 1])  # vaccinated who are still susceptible
-                # VaxxedSus[i] = VaxxedSus[i][::-1]
-                # SumDdose1i[i] = sum(self.Ddose1[i][self.nPad+d::-1]*np.array([1-(vprob*i/(vdelay-1)) for i in range(vdelay)] + [1-vprob]*(dosegap-vdelay) + [1-vprob-((finalvprob-vprob)*i/(vdelay2-1)) for i in range(vdelay2)] + [1-finalvprob]*(1+d+self.nPad-dosegap-vdelay2))) # total vaccinated who are still susceptible
-                # SumDdose1i[i] = sum(self.Ddose1[i][self.nPad + d::-1] * self.vaxmultiplier[:self.nPad + d + 1])  # total vaccinated who are still susceptible
 
-                VaxxedSus[i] = self.Ddose1[i][:self.nPad + d + 1]*self.vaxmultiplier[-self.nPad - d - 1:]  # vaccinated who are still susceptible
-                SumDdose1i[i] = np.sum(self.Ddose1[i][:self.nPad + d + 1] * self.vaxmultiplier[-self.nPad - d - 1:])  # total vaccinated who are still susceptible
-                # print(SumDdose1i,self.Ddose1[self.nPad+d:self.nPad+d-self.nP-1:-1],"\n\n")
 
-        SumDitiled = np.tile(SumDi, (self.nPad + d + 1, 1)).T
-        TotPoptiled = np.tile(self.TotPop, (self.nPad + d + 1, 1)).T
-        JIVMult = self.Rpar * SumDitiled / TotPoptiled
+
+        SumDi = (self.Pinf * self.Di[:,self.nPad + d:self.nPad + d - self.nP - 1:-1]).sum(axis=1)  # total currently actually infectious (of those in the I group)
+        SumRFi = (self.Prd * self.Di[:,self.nPad + d:self.nPad + d - self.nP - 1:-1]).sum(axis=1)  # total of I group who just recovered/died
+
+        if vperday > 0:
+            VaxxedSus = self.Ddose1[:,:self.nPad + d + 1] * self.vaxmultiplier[-self.nPad - d - 1:]  # vaccinated who are still susceptible
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        JIVMult = (self.Rpar * SumDi / self.TotPop).T
+
         for i in range(18):
             if vperday > 0:
-                JustInfectedVaxxed = (self.cmxtiledfull[i][:,-self.nPad-d-1:] * VaxxedSus[i] * JIVMult).sum(axis=0)
+
+
+
+
+                JustInfectedVaxxed = (self.cmx[i] * JIVMult).sum() * VaxxedSus[i]
+
+
                 sumJustInfectedVaxxed = np.sum(JustInfectedVaxxed)
+
                 self.Ddose1I[i][self.nPad + d] += sumJustInfectedVaxxed  # vaxxed people who get infected
-                if self.dose1[i][d] - self.Ddose1I[i][self.nPad+d] < 0:
-                    # self.Ddose1I[i][self.nPad+d] = self.dose1[i][d]
-                    print("ERROR 270")
-                self.Di[i][self.nPad + d] += sum(self.cmx[i] * self.Rpar * self.S[i][d] * SumDi / self.TotPop) + sumJustInfectedVaxxed
-                if self.S[i][d] - self.Di[i][self.nPad+d] + self.Ddose1I[i][self.nPad+d] < 0:
-                    # self.Di[i][self.nPad+d] = self.S[i][d] + self.Ddose1I[i][self.nPad+d]
-                    print("ERROR 274")
+
+
+
+
+                self.Di[i][self.nPad + d] += (self.cmx[i] * self.Rpar * self.S[i][d] * SumDi / self.TotPop).sum() + sumJustInfectedVaxxed
+
+
+
+
+
                 self.Ddose1[i][:self.nPad + d + 1] -= JustInfectedVaxxed
+
+
+
+
+
+
+
+
             else:
-                self.Di[i][self.nPad + d] += sum(self.cmx[i] * self.Rpar * self.S[i][d] * SumDi / self.TotPop)
-                if self.S[i][d] - self.Di[i][self.nPad+d] < 0:
-                    # self.Di[i][self.nPad+d] = self.S[i][d]
-                    print("ERROR 280")
+                self.Di[i][self.nPad + d] += (self.cmx[i] * self.Rpar * self.S[i][d] * SumDi / self.TotPop).sum()
 
-        # for i in range(18):
-        #     for j in range(18):
-        #         if vperday > 0:
-        #             JustInfectedVaxxed = self.cmx[i][j] * self.Rpar * VaxxedSus[i] * SumDi[j] / self.TotPop[j]
-        #             self.Ddose1I[i][self.nPad + d] += sum(JustInfectedVaxxed)  # vaxxed people who get infected
-        #             self.Di[i][self.nPad + d] += self.cmx[i][j] * self.Rpar * self.S[i][d] * SumDi[j] / self.TotPop[j] + sum(JustInfectedVaxxed)
-        #             self.Ddose1[i][:self.nPad + d + 1] -= JustInfectedVaxxed
-        #         else:
-        #             self.Di[i][self.nPad + d] += self.cmx[i][j] * self.Rpar * self.S[i][d] * SumDi[j] / self.TotPop[j]
-        #     if i == 5:
-        #         print(d,self.Ddose1I[i][self.nPad + d], self.Di[i][self.nPad + d], self.Ddose1[i][:self.nPad + d + 1],"\n\n")
 
-        # for i in range(18):
-        #     finalSumDiMult = 0
-        #     for j in range(18):
-        #         finalSumDiMult += self.cmx[i][j]*SumDi[j]
-        #     # print(min(self.Rpar*self.S[i][d]*finalSumDiMult/self.TotPop[i],self.TotPop[i])-min(self.Rpar*(self.S[i][d]+SumDdose1i[i])*finalSumDiMult/self.TotPop[i],self.TotPop[i]))
-        #     if vperday > 0:
-        #         self.Ddose1I[i][self.nPad+d]=self.Rpar*SumDdose1i[i]*finalSumDiMult/self.TotPop[i]
-        #         if self.dose1[i][d] - self.Ddose1I[i][self.nPad+d] < 0:
-        #             self.Ddose1I[i][self.nPad+d] = self.dose1[i][d]
-        #         self.Di[i][self.nPad+d]=min(self.Rpar*(self.S[i][d]+SumDdose1i[i])*finalSumDiMult/self.TotPop[i],self.TotPop[i])
-        #         # self.SvaccS.append(SumDdose1i)
-        #         # self.imm.append(self.totSvacc[-1]-SumDdose1i)
-        #         if self.S[i][d] - self.Di[i][self.nPad+d] + self.Ddose1I[i][self.nPad+d] < 0:
-        #             self.Di[i][self.nPad+d] = self.S[i][d] + self.Ddose1I[i][self.nPad+d]
-        #     else:
-        #         self.Di[i][self.nPad+d]=min(self.Rpar*self.S[i][d]*finalSumDiMult/self.TotPop[i],self.TotPop[i])
-        #         if self.S[i][d] - self.Di[i][self.nPad+d] < 0:
-        #             self.Di[i][self.nPad+d] = self.S[i][d]
 
-            #print(i,Di[nP+i],SumDi,S[i]/TotPop)
-            self.Dr[i][d]=(1-self.Kf[i])*SumRFi[i]
 
-            self.Df[i][d]=self.Kf[i]*SumRFi[i]
-        for i in range(18):
-            # finalDi = 0
-            # finalDdose1I = 0
-            # for j in range(18):
-            #     finalDi += self.cmx[i][j]*self.Di[j][self.nPad+d] # summation of self.Di[self.nPad+d] over all different groups, for i
-            #     finalDdose1I += self.cmx[i][j]*self.Ddose1I[j][self.nPad+d]
 
-            self.S[i][d+1]=self.S[i][d]-self.Di[i][self.nPad+d]
-            if vperday > 0:
-                self.S[i][d+1] = self.S[i][d+1] + self.Ddose1I[i][self.nPad+d]
-                if self.S[i][d+1] < 0:
-                    print("negative error alert",self.S[i][d+1])
-                    self.S[i][d+1] = 0
-                self.dose1[i][d+1]=self.dose1[i][d]-self.Ddose1I[i][self.nPad+d]
-            self.I[i][d+1]=max(min(self.TotPop[i],self.I[i][d]+self.Di[i][self.nPad+d]-self.Dr[i][d]-self.Df[i][d]),0)
-            self.R[i][d+1]=min(self.TotPop[i],self.R[i][d]+self.Dr[i][d])
-            self.Fat[i][d+1]=min(self.TotPop[i],self.Fat[i][d]+self.Df[i][d])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        self.Dr[:,d]=(1-self.Kf)*SumRFi
+
+        self.Df[:,d]=self.Kf*SumRFi
+
+        self.S[:,d + 1] = self.S[:,d] - self.Di[:,self.nPad + d]
+        if vperday > 0:
+            self.S[:,d + 1] = self.S[:,d + 1] + self.Ddose1I[:,self.nPad + d]
+            self.dose1[:,d + 1] = self.dose1[:,d] - self.Ddose1I[:,self.nPad + d]
+        self.I[:,d + 1] = np.maximum(np.minimum(self.TotPop, self.I[:,d] + self.Di[:,self.nPad + d] - self.Dr[:,d] - self.Df[:,d]), 0)
+        self.R[:,d + 1] = np.minimum(self.TotPop, self.R[:,d] + self.Dr[:,d])
+        self.Fat[:,d + 1] = np.minimum(self.TotPop, self.Fat[:,d] + self.Df[:,d])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         self.d += 1
+
+
+
+
+
+
+
 
     def iterate(self, d, vdelay=14, vprob=0.8, vfromday=100, vperday=0, dosegap=21, finalvprob=0.95, vdelay2=7, vcapacityincrease=0, vaxmax=500000):
         """ Iterate the equation d days
         """
         asize = d+1
         self.S=np.zeros((18, asize))
-       # self.S[0]=self.TotPop-self.I0
+
         self.I=np.zeros((18, asize))
         self.dose1=np.zeros((18, asize))
-       # self.I[0]=self.I0
+
         self.R=np.zeros((18, asize))
         self.Fat=np.zeros((18, asize))
         self.counterr=np.zeros((18))
@@ -361,12 +418,15 @@ class PopDyn(metromin) :
         self.Dr=np.zeros((18, asize))
         self.Df=np.zeros((18, asize))
 
+
+
+
         self.vaxmultiplier = np.flip(np.array([1 - (vprob * i / (vdelay - 1)) for i in range(vdelay)] + [1 - vprob] * (dosegap - vdelay) + [1 - vprob - ((finalvprob - vprob) * i / (vdelay2 - 1)) for i in range(vdelay2)] + [1 - finalvprob] * (1 + d + self.nPad - dosegap - vdelay2)))
         self.cmxtiledfull = np.zeros((18,18,self.nPad + d + 1))
 
         for i in range(18):
             self.cmxtiledfull[i] = np.tile(self.cmx[i], (self.nPad + d + 1, 1)).T
-        # print(self.cmxtiledfull)
+
         self.d = 0
         
         for i in range(18):
@@ -375,36 +435,48 @@ class PopDyn(metromin) :
         self.intialise(self.wave)
         
         self.vaccinated = np.zeros(18)
-        # self.SvaccS = []
-        # self.imm = []
+
+
         self.totSvacc = np.zeros((18, asize))
         self.vaxcounthistory = []
-
+        notdone = True
         for i in range(d):
-            self.one_step(vdelay, vprob, vfromday, vperday, dosegap, finalvprob, vdelay2, vcapacityincrease, vaxmax)
-            # if vperday > 0:
-            #     if i > vfromday:
-            #         self.vaccinated += vperday
-            #         self.S[self.d]=self.S[self.d]-vperday
-            #         self.dose1[self.d]=self.dose1[self.d-1]+vperday
-            #         if self.S[self.d] < 0:
-            #             self.S[self.d] = 0
-            #         if self.dose1[self.d] < self.TotPop:
-            #             self.dose1[self.d] = self.TotPop
-        # plt.plot(self.vaxcounthistory)
-        # plt.savefig('graphics/vax-capacity-changes.pdf', dpi=400, bbox_inches="tight", transparent=True)
-        # plt.show()
+            if self.optimise:
+                if abs(self.Fat.sum(axis=0)[i] - self.Fat.sum(axis=0)[i-5]) > 1 or self.I.sum(axis=0)[i] > self.I.sum(axis=0)[i-1] or i < vfromday+150:
+                    self.one_step(vdelay, vprob, vfromday, vperday, dosegap, finalvprob, vdelay2, vcapacityincrease, vaxmax)
+                else:
+
+                    if notdone:
+                        if i < vfromday+100:
+                            print("Only did",i,"simulations")
+                        for j in range(len(self.Fat)):
+                            self.Fat[j][i+1:] = [self.Fat[j][i]]*(d-i)
+                        notdone = False
+            else:
+                self.one_step(vdelay, vprob, vfromday, vperday, dosegap, finalvprob, vdelay2, vcapacityincrease, vaxmax)
+
+
+
+
+
+
+
+
+
+
+
+
         self.final_stats = [self.S[:,-1], self.I[:,-1], self.R[:,-1], self.Fat[:,-1], self.vaccinated,self.Fat]
-        # print(self.Ddose1)
-        # plt.plot(self.SvaccS,"b")
-        # plt.plot(self.imm,"g")
-        # plt.show()
+
+
+
+
       
     def F(self, p):
-        # p : array of parameters to fit
-        #self.K = p[0]
-        #self.Ns = p[1]
-        #self.Y = p[2]
+
+
+
+
         self.I0 = p[0]
         self.Rpar = p[1]
         Nd = len(self.exp_data)
@@ -447,9 +519,9 @@ class PopDyn(metromin) :
         plt.semilogy(dateswithoutblanks,d,"b-")
         plt.gcf().autofmt_xdate()
         plt.show()
-        #print(data[:N])
-        #print(d,"\n")
-        #print(self.Fat[:N])
+
+
+
         
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
         if Nd < 115:
@@ -468,84 +540,106 @@ class PopDyn(metromin) :
         plt.gcf().autofmt_xdate()
         plt.show()
       
-    def plot_model(self, N=-1, e_date="", Nd="", showdates=False, both=False, remove_smaller_than=-1):
-
+    def plot_model(self, N=-1, e_date="", Nd="", showdates=False, both=False, remove_smaller_than=-1, filename="test.pdf"):
+        vfrom = 84
+        infected = self.I.sum(axis=0)/100
+        print(len(self.vaxcounthistory),self.vaxcounthistory)
+        vch = [0]*150 + self.vaxcounthistory
+        vch2 = [0]*vfrom + vch
+        self.vch = np.array(vch)
+        self.vch2 = np.array(vch2)
         dates = list(reversed([datetime.strptime(e_date,'%Y-%m-%d') - timedelta(days=x) for x in range(Nd)]))
 
-        plt.xlabel("Days")
-        plt.ylabel("Fatalities")
-
-        if N == -1:
-            dateswithoutblanks, d = self.larger_than(dates, self.Fat.sum(axis=0), remove_smaller_than)  # remove data < 1
-        else:
-            dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0)[:N],remove_smaller_than) # remove data < 1
-
-        if showdates == True:
-            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
-            if Nd < 115:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=5))
-            elif Nd < 230:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=10))
-            elif Nd < 345:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=15))
-            else:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=20))
-            plt.minorticks_on()
-            
-            plt.plot(dateswithoutblanks,d,"b-")
-            plt.gcf().autofmt_xdate()
-        else:
-            plt.plot(d,"b-",linewidth=3)
-
-        dailymodeldata, dailydata = self.cumulative_to_daily(d, "")
-        
-        if both == True:
-            self.vaccinated_stats = [self.S[:,-1], self.I[:,-1], self.R[:,-1], self.Fat[:,-1], self.vaccinated, self.Fat]
-            self.intialise(self.wave,self.delay)
-            self.iterate(N)
-            if N == -1:
-                dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0),remove_smaller_than) # remove data < 1
-            else:
-                dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0)[:N],remove_smaller_than) # remove data < 1
-            if showdates == True:
-                plt.plot(dateswithoutblanks,d,"r--",linewidth=3)
-            else:
-                plt.plot(d,"r--",linewidth=3)
-
-        # plt.savefig("prio.png",bbox_inches="tight",dpi=300)
-        plt.show()
-        #print(data[:N])
-        #print(d,"\n")
-        #print(self.Fat[:N])
-
+        # plt.grid(b=True,which="major",color="gray")
+        # plt.grid(b=True,which="minor",color="lightgray")
+        # plt.minorticks_on()
+        # plt.xlabel("Days")
+        # plt.ylabel("Fatalities")
+        #
+        # if N == -1:
+        #     dateswithoutblanks, d = self.larger_than(dates, self.Fat.sum(axis=0), remove_smaller_than)  # remove data < 1
+        # else:
+        #     dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0)[:N],remove_smaller_than) # remove data < 1
+        #
+        # if showdates == True:
+        #     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
+        #     if Nd < 115:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=5))
+        #     elif Nd < 230:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=10))
+        #     elif Nd < 345:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=15))
+        #     else:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=20))
+        #     plt.minorticks_on()
+        #
+        #     plt.plot(dateswithoutblanks,d,"b-")
+        #     plt.gcf().autofmt_xdate()
+        # else:
+        #     plt.plot(d,"b-",linewidth=3)
+        #
         # dailymodeldata, dailydata = self.cumulative_to_daily(d, "")
-        plt.xlabel("Days")
-        plt.ylabel("Fatalities")
-        if showdates == True:
-            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
-            if Nd < 115:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=5))
-            elif Nd < 230:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=10))
-            elif Nd < 345:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=15))
-            else:
-                plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=20))
-            plt.minorticks_on()
-            
-            plt.semilogy(dateswithoutblanks[1:],dailymodeldata,"b-")
-            plt.gcf().autofmt_xdate()
-        else:
-            plt.plot(dailymodeldata,"b-",linewidth=3)
-            
-        if both == True:
-            dailymodeldata, dailydata = self.cumulative_to_daily(d, "")
-            if showdates == True:
-                plt.semilogy(dateswithoutblanks[1:],dailymodeldata,"r--",linewidth=3)
-            else:
-                plt.plot(dailymodeldata,"r--",linewidth=3)
-        # plt.savefig("prio-cum.png",bbox_inches="tight",dpi=300)
-        plt.show()
+        #
+        # if both == True:
+        #     self.vaccinated_stats = [self.S[:,-1], self.I[:,-1], self.R[:,-1], self.Fat[:,-1], self.vaccinated, self.Fat]
+        #     self.intialise(self.wave,self.delay)
+        #     self.iterate(N)
+        #     if N == -1:
+        #         dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0),remove_smaller_than) # remove data < 1
+        #     else:
+        #         dateswithoutblanks,d = self.larger_than(dates,self.Fat.sum(axis=0)[:N],remove_smaller_than) # remove data < 1
+        #     if showdates == True:
+        #         plt.plot(dateswithoutblanks,d,"r--",linewidth=3)
+        #     else:
+        #         plt.plot(vch)
+        #         plt.plot(np.array(vch+[0]*vfrom)+np.array(vch2),"--")
+        #         plt.plot(d,"r--",linewidth=3)
+        # plt.plot(infected)
+        # plt.xlim(right=1000)
+        # plt.ylim(0,160000)
+        # plt.savefig(filename,bbox_inches="tight",dpi=300)
+        # # plt.savefig("prio.png",bbox_inches="tight",dpi=300)
+        # plt.show()
+        # #print(data[:N])
+        # #print(d,"\n")
+        # #print(self.Fat[:N])
+        # plt.grid(b=True,which="major", color="gray")
+        # plt.grid(b=True,which="minor",color="lightgray")
+        # plt.minorticks_on()
+        #
+        # # dailymodeldata, dailydata = self.cumulative_to_daily(d, "")
+        # plt.xlabel("Days")
+        # plt.ylabel("Fatalities")
+        # if showdates == True:
+        #     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
+        #     if Nd < 115:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=5))
+        #     elif Nd < 230:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=10))
+        #     elif Nd < 345:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=15))
+        #     else:
+        #         plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=20))
+        #     plt.minorticks_on()
+        #
+        #     plt.semilogy(dateswithoutblanks[1:],dailymodeldata,"b-")
+        #     plt.gcf().autofmt_xdate()
+        # else:
+        #     plt.plot(dailymodeldata,"b-",linewidth=3)
+        #
+        # if both == True:
+        #     dailymodeldata, dailydata = self.cumulative_to_daily(d, "")
+        #     if showdates == True:
+        #         plt.semilogy(dateswithoutblanks[1:],dailymodeldata,"r--",linewidth=3)
+        #     else:
+        #         plt.plot(np.array(vch)/100)
+        #         plt.plot((np.array(vch+[0]*vfrom)+np.array(vch2))/100,"--")
+        #         plt.plot(dailymodeldata,"r--",linewidth=3)
+        # plt.plot(infected/50)
+        # plt.xlim(right=1000)
+        # plt.ylim(0,1500)
+        # plt.savefig("daily"+filename,bbox_inches="tight",dpi=300)
+        # plt.show()
         
     def cumulative_to_daily(self, var1, var2):
         nvar1 = []
@@ -571,7 +665,7 @@ class PopDyn(metromin) :
     
     def stats(self):
         return(self.final_stats)
-        # return(self.S[-1], self.I[-1], self.R[-1], self.Fat[-1], self.vaccinated)
+
     
     def vstats(self):
         return(self.vaccinated_stats)
@@ -594,17 +688,17 @@ if __name__ == "__main__":
     wave = 1
     delay = 14
     ndays=int(0.49+(seconds_since_epoch(e_date)-seconds_since_epoch(s_date))/(3600*24))
-    #print("ndays=",ndays)
-    #print(list(reversed([datetime.strptime(e_date,'%Y-%m-%d') - timedelta(days=x) for x in range(ndays+1)])))
+
+
     pop = PopDyn(TotPop,I0,Tmax,d,R,Kf,nP,wave)
     
     pop.set_bounds(min=[0,0],max=[50000,5])
     pop.read_data(url, country, s_date,e_date)
     pop.read_past_data(url, country, pop.subtract_days(s_date,delay), s_date)
-    # pop.read_data(data_file)
+
     print(pop.exp_data)
     pop.N0 = pop.exp_data[0]
-    #pop.intialise(1)
+
     pop.intialise(wave,delay)
     
     p = pop.relax(a0=[2.,2.], T0=0.001, Tmin=1e-6, dTcoef=0.90, Nsweep=100,
